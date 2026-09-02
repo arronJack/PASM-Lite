@@ -1,7 +1,12 @@
 # PASM-Lite — 零 token 认知智能体 · 开源教学版
 
-> 🚀 本仓库 = **PASM 的系统介绍 + 教学最小实现 + 自带展示页**，一体化，无任何外部链接依赖。
-> 想先看效果：打开根目录 [index.html](index.html)（仓库自带完整介绍页，可本地浏览/一键部署）。
+> 🚀 本仓库 = **PASM 的系统介绍 + 教学最小实现 + 自带展示页**，一体化。
+> 往下读：**本页（README）就是可浏览的介绍页**（Gitee 直接渲染 Markdown）；
+> 根目录 [index.html](index.html) 是配套的静态落地页文件。
+
+> ⚠️ **关于预览小知识**：Gitee 的文件浏览器**不会渲染 .html**，所以点开
+> `index.html` 显示的是源码——这是平台限制，不是文件损坏。把它变成能直接浏览
+> 的网页只需一次托管，见文末[三、部署指南](#三部署指南)（Gitee Pages / 静态托管二选一）。
 
 ---
 
@@ -119,17 +124,21 @@ Lite 是**教学骨架，不是性能基线**：
 
 ### 3.1 把介绍页发布成公开网页（任选其一）
 
+> 提示：想要一个"点开就是正常页面"的网址，选 A 或 B；部署成功后把网址填到
+> 仓库"管理 → 主页"，仓库页顶部即出现直达入口。
+
 ```bash
-# 本地直接看
+# 本地直接看（无需网络）
 浏览器打开 index.html
 
-# 方案 A：Gitee Pages（域名是 gitee.io，国内访问快）
-#   1) gitee 账号完成实名认证
-#   2) 仓库 → 服务 → Gitee Pages → 部署分支选 master、目录填 /（根目录含 index.html）
-#   3) 得到 https://arronzheng.gitee.io/pasm-lite/
+# 方案 A：Gitee Pages（域名 gitee.io，国内访问快；免费，需实名）
+#   1) Gitee「设置 → 实名认证」完成一次实名（页面服务要求）
+#   2) 仓库页 → 「服务」→「Gitee Pages」→ 部署分支 master、目录填 /
+#   3) 得到 https://arronzheng.gitee.io/pasm-lite/  ← 点开就是正常页面
 
-# 方案 B：任意静态托管（CloudStudio / Zeabur / Vercel / GitHub Pages）
-#   把本仓库克隆/上传，托管平台选"静态站点"，入口 index.html 即可
+# 方案 B：任意静态托管（1 分钟出网址，无需实名）
+#   CloudStudio / Vercel / Netlify / GitHub Pages：上传本仓库 → 选"静态站点"
+#   → 入口 index.html → 得到公开网址
 ```
 
 ### 3.2 部署完整引擎（提供 OpenAI 兼容 API，需授权）
