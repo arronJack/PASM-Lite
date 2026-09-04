@@ -153,3 +153,9 @@ cd PASM-Lite && pip install torch && python pasm_lite.py
 MIT © 2026 arronZheng
 
 *PASM-Lite 为开源教学版，与生产引擎分仓治理。欢迎 fork 学习、提 issue 讨论。*
+
+## PASM 能做什么 / 效果 / 生态
+
+完整能力清单、可度量效果、三仓库生态与文档地图见 **`docs/pasm_ecosystem.md`**
+（会记住你并长大的伙伴、双脑对话、待办/找文件/分析文档/自动编程、
+自主读书与上网自学、桌面小人形态——以及 token 省多少、记忆多快、如何成长）。
