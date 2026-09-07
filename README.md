@@ -6,6 +6,29 @@
 
 ---
 
+## 🇬🇧 English
+
+**PASM-Lite** is the open-source educational edition of **PASM (Predictive Agent System
+with Memory)** — a token-free cognitive agent framework. It asks a bold question:
+
+> *Does AI "thinking" really have to generate tokens?*
+
+Large models think by predicting the next token; brains don't. PASM implements the
+brain's way: **perception → working memory → episodic recall → world-model "imagination" →
+planning → action**, all in continuous latent vectors with zero tokens. This repo contains
+the full write-up (architecture, experiments, growth/personality demos as GIFs) plus a
+minimal runnable teaching implementation, all plain Markdown + Python.
+
+**Highlights**: seven-layer brain-inspired architecture; agents that *grow* from infancy
+to adulthood; personalities that genuinely diverge (cautious vs. adventurous); fully
+introspectable inner states (emotion vectors, memory hits, habit formation).
+
+**Quick start**: see [Deployment Guide (Chinese)](#三部署指南) below — Python 3.10+,
+`pip install -r requirements.txt`, then run the demo. Documentation is primarily in
+Chinese; [index.md](index.md) is a good starting point.
+
+---
+
 ## 一、PASM 是什么（先认识它，再看代码）
 
 **PASM（Predictive Agent System with Memory）** 是一个"非 token 内部循环"的
