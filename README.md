@@ -3,6 +3,8 @@
 > 🚀 本仓库 = **PASM 系统介绍 + 教学最小实现**，一体化（纯 Markdown，Gitee 直接渲染）。
 > 快速了解 PASM 是什么、能做什么：读根目录 [index.md](index.md)（纯文字介绍页）；
 > 本 README 是完整图文版（含效果演示 GIF 与教学说明）。
+>
+> 📚 **文档导航**：[**全部功能总览**](docs/FEATURES.md) · [生态说明](docs/pasm_ecosystem.md) · [纯文字介绍页](index.md)
 
 ---
 
