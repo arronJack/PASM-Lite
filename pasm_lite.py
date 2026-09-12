@@ -16,6 +16,7 @@ from collections import deque
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from learning import LearningLayer
 
 SEED = 7
 random.seed(SEED); torch.manual_seed(SEED)
@@ -174,6 +175,7 @@ class Agent:
         self.mem = Episodic()
         self.planner = Planner(self.wm)
         self.opt = torch.optim.Adam(list(self.ae.parameters()) + list(self.wm.parameters()), lr=3e-3)
+        self.learner = LearningLayer(latent=8, n_act=4, lr=0.05)   # 关联式学习层（v0.28.x 起步：状态→动作偏好 + 技能记忆）
         self.h = torch.zeros(24)
 
     def act(self, obs):
@@ -187,6 +189,10 @@ class Agent:
             a = random.randrange(4)
             return a, z, c, m, key
         a = self.planner.choose(z, m, self.h)
+        # 学习层：当对"某动作偏好"有足够把握时，按偏好微调（不影响 ε 探索分支）
+        b = self.learner.bias(z)
+        if b.abs().max() > 0.1 and random.random() < 0.4:
+            a = int(b.argmax())
         return a, z, c, m, key
 
     def learn(self, obs, z, c, m, key, a, next_obs, r):
@@ -202,6 +208,7 @@ class Agent:
         err = float((z2.detach() - zp.detach()).pow(2).mean())
         if err > 0.05 or abs(r) > 0.15:
             self.mem.write(key, torch.cat([a_oh, z2.detach(), torch.tensor([r])]), r)
+        self.learner.update(z, a, r)        # 关联式学习：正奖励强化、负奖励削弱（同时沉淀技能记忆）
         self.h = h.detach()
 
 
@@ -240,7 +247,7 @@ def main():
         hist.append(total)
         if ep % 10 == 0 or ep == 39:
             print(f"episode {ep}: reward {total:+.2f} | 能量 {env.eaten} | "
-                  f"情景记忆 {len(ag.mem)} 条")
+                  f"情景记忆 {len(ag.mem)} 条 | 学习层技能 {len(ag.learner)}")
     print(f"\n平均奖励(末5集): {sum(hist[-5:])/5:+.2f}（前5集 {sum(hist[:5])/5:+.2f}）")
     print("演示要点：AI 无 token、纯连续向量循环即可探索并积累情景记忆；")
     print("完整引擎在此基础上加 情绪/性格/发育/元认知/睡眠巩固/三库记忆/API 等。")
