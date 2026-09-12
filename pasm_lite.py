@@ -24,6 +24,10 @@ random.seed(SEED); torch.manual_seed(SEED)
 
 # ================= 环境：10×10 网格，收集能量块 =================
 class GridWorld:
+    # 自述维度：供 LiteEngine 在换环境时自动调整感知/世界模型/规划器
+    obs_dim = 27
+    n_actions = 4
+
     def __init__(self, size=10, n_obs=10, n_food=5):
         self.size, self.n_obs, self.n_food = size, n_obs, n_food
         self.reset()
@@ -93,14 +97,16 @@ class AutoEncoder(nn.Module):
 
 # ================= 层 1：工作记忆（最近 K 步上下文） =================
 class WorkMemory:
-    def __init__(self, k=4):
+    def __init__(self, k=4, latent=8):
         self.buf = deque(maxlen=k)
+        self.latent = latent
 
     def push(self, z):
         self.buf.append(z.detach())
 
     def context(self):
-        return torch.stack(list(self.buf)).mean(0) if self.buf else torch.zeros(8)
+        return (torch.stack(list(self.buf)).mean(0) if self.buf
+                else torch.zeros(self.latent))
 
     def reset(self):
         self.buf.clear()
@@ -108,20 +114,24 @@ class WorkMemory:
 
 # ================= 层 2：情景记忆（KNN 检索 + 事件驱动写入） =================
 class Episodic:
-    def __init__(self, cap=2000, k=3):
+    def __init__(self, cap=2000, k=3, latent=8, n_act=4):
         self.keys = []
         self.vals = []
         self.cap, self.k = cap, k
+        self.latent, self.n_act = latent, n_act
 
     def query(self, key):
         if not self.keys:
-            return torch.zeros(8)
+            return torch.zeros(self.latent)
         ks = torch.stack(self.keys)
         sim = F.cosine_similarity(key.unsqueeze(0), ks)
         top = sim.topk(min(self.k, len(ks)))
         w = F.softmax(top.values * 5.0, 0)
         vals = torch.stack(self.vals)[top.indices]
-        m = (vals[:, 4:12] * w.unsqueeze(1)).sum(0)   # value 的"下一状态"段加权
+        # value = [动作 one-hot(n_act) | 下一状态 z2(latent) | 奖励(1)]
+        # 取"下一状态"那一段做加权 —— 维度随 latent/n_act 自适应
+        m = (vals[:, self.n_act:self.n_act + self.latent]
+             * w.unsqueeze(1)).sum(0)
         return m
 
     def write(self, key, value, r):
@@ -136,9 +146,10 @@ class Episodic:
 
 # ================= 层 3：世界模型（预测 z′ 与 r） =================
 class WorldModel(nn.Module):
-    def __init__(self, latent=8, hidden=24):
+    def __init__(self, latent=8, hidden=24, n_act=4):
         super().__init__()
-        self.gru = nn.GRUCell(latent + 4 + latent, hidden)
+        self.n_act = n_act
+        self.gru = nn.GRUCell(latent + n_act + latent, hidden)
         self.head_z = nn.Linear(hidden, latent)
         self.head_r = nn.Linear(hidden, 1)
 
@@ -149,17 +160,18 @@ class WorldModel(nn.Module):
 
 # ================= 规划器：世界模型里的"想象"（简单采样评估） =================
 class Planner:
-    def __init__(self, wm, n_seq=16, horizon=4):
+    def __init__(self, wm, n_seq=16, horizon=4, n_act=4):
         self.wm, self.n_seq, self.horizon = wm, n_seq, horizon
+        self.n_act = n_act
 
     @torch.no_grad()
     def choose(self, z, m, h):
         best_a, best_g = 0, -1e9
         for _ in range(self.n_seq):
-            seq = [random.randrange(4) for _ in range(self.horizon)]
+            seq = [random.randrange(self.n_act) for _ in range(self.horizon)]
             hh, zz, g = h.clone(), z.clone(), 0.0
             for t, a in enumerate(seq):
-                hh, zz, rr = self.wm(zz, F.one_hot(torch.tensor(a), 4).float(), m, hh)
+                hh, zz, rr = self.wm(zz, F.one_hot(torch.tensor(a), self.n_act).float(), m, hh)
                 g += (0.9 ** t) * float(rr)
             if g > best_g:
                 best_g, best_a = g, seq[0]
@@ -168,15 +180,34 @@ class Planner:
 
 # ================= 智能体主循环 =================
 class Agent:
-    def __init__(self):
-        self.ae = AutoEncoder()
-        self.wm = WorldModel()
-        self.wmem = WorkMemory()
-        self.mem = Episodic()
-        self.planner = Planner(self.wm)
+    def __init__(self, obs_dim=27, latent=8, n_act=4, hidden=24):
+        # 维度全部可配 —— 这是"换非网格环境"的前提（默认值 = 10×10 网格世界）
+        self.obs_dim, self.latent, self.n_act, self.hidden = obs_dim, latent, n_act, hidden
+        self.ae = AutoEncoder(in_dim=obs_dim, latent=latent)
+        self.wm = WorldModel(latent=latent, hidden=hidden, n_act=n_act)
+        self.wmem = WorkMemory(latent=latent)
+        self.mem = Episodic(latent=latent, n_act=n_act)
+        self.planner = Planner(self.wm, n_act=n_act)
         self.opt = torch.optim.Adam(list(self.ae.parameters()) + list(self.wm.parameters()), lr=3e-3)
-        self.learner = LearningLayer(latent=8, n_act=4, lr=0.05)   # 关联式学习层（v0.28.x 起步：状态→动作偏好 + 技能记忆）
-        self.h = torch.zeros(24)
+        self.learner = LearningLayer(latent=latent, n_act=n_act, lr=0.05)   # 关联式学习层
+        self.h = torch.zeros(hidden)
+
+    # ---- 感知编码器冻结：让潜空间定型，之后只训练世界模型/学习层 ----
+    def freeze_encoder(self):
+        for p in self.ae.parameters():
+            p.requires_grad_(False)
+        self.ae.eval()
+        return self
+
+    def unfreeze_encoder(self):
+        for p in self.ae.parameters():
+            p.requires_grad_(True)
+        self.ae.train()
+        return self
+
+    @property
+    def encoder_frozen(self):
+        return not any(p.requires_grad for p in self.ae.parameters())
 
     def act(self, obs):
         z = self.ae.encode(obs)
@@ -186,7 +217,7 @@ class Agent:
         m = self.mem.query(key)
         # h 来自上一步真实转移后的上下文；规划与训练使用同一 h 起点（一致性）
         if random.random() < 0.15:          # 简单 ε 探索，防止动作分布锁死
-            a = random.randrange(4)
+            a = random.randrange(self.n_act)
             return a, z, c, m, key
         a = self.planner.choose(z, m, self.h)
         # 学习层：当对"某动作偏好"有足够把握时，按偏好微调（不影响 ε 探索分支）
@@ -197,7 +228,7 @@ class Agent:
 
     def learn(self, obs, z, c, m, key, a, next_obs, r):
         z2 = self.ae.encode(next_obs)
-        a_oh = F.one_hot(torch.tensor(a), 4).float()
+        a_oh = F.one_hot(torch.tensor(a), self.n_act).float()
         h, zp, rp = self.wm(z, a_oh, m, self.h)
         loss = (z2 - zp).pow(2).mean() + 0.2 * (r - float(rp.detach())) ** 2 \
             + (obs - self.ae.dec(z)).pow(2).mean() * 0.5
@@ -222,7 +253,8 @@ def main():
     for _ in range(600):
         a = random.randrange(4)
         nxt, r, done = env.step(a)
-        z, c, m, key = ag.ae.encode(obs), torch.zeros(8), torch.zeros(8), None
+        z, c, m, key = (ag.ae.encode(obs), torch.zeros(ag.latent),
+                        torch.zeros(ag.latent), None)
         a_oh = F.one_hot(torch.tensor(a), 4).float()
         h, zp, rp = ag.wm(z, a_oh, m, ag.h)
         loss = (ag.ae.encode(nxt) - zp).pow(2).mean() + 0.2 * (r - float(rp.detach())) ** 2

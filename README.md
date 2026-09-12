@@ -195,6 +195,27 @@ python engine.py            # 跑通闭环 + 打印接口一致性自检
 python engine.py 3 150      # 3 局、预热 150 步（快速验证用）
 ```
 
+**世界可换 · 学习层可换（v0.2.1 起）**
+
+```python
+from engine import LiteEngine
+
+# ① 换世界：环境来自注册表，非网格世界也能跑
+eng = LiteEngine(env_name="toy-vector")   # 连续向量世界：obs_dim=3, n_actions=2
+# ② 换学习层：运行时热插拔，只要满足 pasm.learning/1.0 契约
+ok, msg = eng.attach_learning(MyLearningLayer())   # 契约 + 潜维 + 动作数 三项校验
+print(eng.learning_tier)                            # full / teaching / 自定义
+```
+
+- **环境契约**：`reset() / step()`（可选 `observe() / spec() / obs_dim / n_actions`），
+  `register_env("my-world", factory)` 登记后即被 `make_env()` 发现；引擎会按环境
+  申报的维度自动调整感知、世界模型与规划器。
+- **学习层契约**：`info / capabilities / learn / bias / state` 五项必需。
+  核心档（`pasm.cognitive.learning.LearningEngine`，离散动作 + 性格设计）与教学档
+  （本仓 `learning.py`，连续向量关联式）是**同一接口的两档实现**，可互换。
+- **可验证**：`python verify_swap.py` 一键跑完两档契约校验、同构驱动与
+  运行时换档（含维度不符被拒、档位不符存档报错等边界）。
+
 > 意义：**上层依赖接口，不依赖实现**。今天用教学版把流程跑通，明天把
 > `create("pasm-lite")` 换成 `create("pasm")`，调用代码一行都不用改。
 

@@ -3,7 +3,6 @@
 【同源镜像】本文件是 PASM 核心仓库 `pasm/engine_api.py` 的同源镜像，
 随 PASM-Lite 一同分发，使本仓库不必依赖私有核心包即可使用统一引擎接口。
 两份内容应保持一致，改动请同步另一份（`diff` 除本段说明外应无差异）。
-
 为什么需要这一层
 ----------------
 PASM 现在有多套"大脑"实现，它们彼此可替换：
@@ -22,6 +21,8 @@ PASM 现在有多套"大脑"实现，它们彼此可替换：
     Engine 协议 + conforms()   可校验 —— 结构对不上会被逐条点出来
     as_engine()                适配器 —— 把任意"大脑"包成标准引擎（不改原对象）
     Registry                   可发现 —— 按名字创建引擎
+    create_best()              择优 —— 按优先级挑第一个跑得起来的，并如实报告降级缺口
+    capability_gap()           差距 —— 算出当前引擎相对参考引擎缺哪些能力
 
 契约（必需）
 ------------
@@ -49,12 +50,19 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime
 
 __all__ = [
     "API_VERSION", "SNAPSHOT_SECTIONS", "REQUIRED_METHODS", "OPTIONAL_METHODS",
+    "DEFAULT_PREFERENCE",
     "EngineInfo", "Capabilities", "Engine", "WrappedEngine", "Registry",
-    "REGISTRY", "register", "create", "available", "engine_info",
-    "as_engine", "conforms", "normalize_snapshot", "selftest",
+    "REGISTRY", "register", "create", "create_best", "available", "engine_info",
+    "as_engine", "conforms", "normalize_snapshot", "capability_gap", "selftest",
+    "Env", "EnvRegistry", "ENV_REGISTRY", "ENV_REQUIRED_METHODS",
+    "ENV_OPTIONAL_METHODS", "env_conforms", "register_env", "make_env",
+    "env_names", "env_registry",
 ]
 
-API_VERSION = "1.0"
+API_VERSION = "1.1"
+
+#: 默认择优顺序：能跑完整七层引擎就用它，否则退到零依赖轻量体。
+DEFAULT_PREFERENCE: Tuple[str, ...] = ("pasm", "pasm-light")
 
 # 规范快照区块：任何引擎的 snapshot() 都应包含这些键（教学版没有的填 None，
 # 这样统一看板/监控可以无差别读取任意引擎的状态）。
@@ -345,10 +353,55 @@ class Registry:
             return _builtin_factory(name)(**cfg)
         raise KeyError("未知引擎 %r（可用：%s）" % (name, ", ".join(self.names()) or "无"))
 
+    # ---- 择优创建 ----
+    def create_best(self, candidates: Optional[Tuple[str, ...]] = None,
+                    **cfg) -> Tuple[Any, Dict[str, Any]]:
+        """按优先级尝试创建第一个**真正能跑起来**的引擎。
+
+        返回 `(engine, report)`；`report` 说明用了谁、试过谁、以及相对首选的
+        **能力缺口**（`gap`），便于上层如实告知用户"现在是降级运行"。
+
+        为什么需要它：调用方不该自己写 `try/except` 链去猜哪个引擎可用——
+        那正是"换引擎要改代码"的根源。把择优留给契约层，上层只依赖接口。
+        """
+        order = tuple(candidates or DEFAULT_PREFERENCE)
+        report: Dict[str, Any] = {"used": None, "preference": list(order),
+                                  "tried": [], "gap": []}
+        known = self.names()
+        for i, name in enumerate(order):
+            if name not in known:
+                report["tried"].append(
+                    {"name": name, "ok": False,
+                     "error": "不可用（未注册或无法导入）"})
+                continue
+            try:
+                eng = self.create(name, **cfg)
+            except Exception as ex:                   # noqa: BLE001
+                report["tried"].append(
+                    {"name": name, "ok": False,
+                     "error": "%s: %s" % (type(ex).__name__, ex)})
+                continue
+            report["tried"].append({"name": name, "ok": True, "error": ""})
+            report["used"] = name
+            report["degraded"] = bool(i > 0)
+            if i > 0:
+                ref = next((n for n in order if n != name and n in known), None)
+                if ref is None:
+                    others = [n for n in known if n != name]
+                    ref = others[0] if others else None
+                if ref:
+                    report["gap"] = capability_gap(eng, ref)
+                    report["gap_vs"] = ref
+            return eng, report
+
+        raise RuntimeError("没有可用引擎（按序尝试：%s）"
+                           % ", ".join(order))
+
 
 REGISTRY = Registry()
 register = REGISTRY.register
 create = REGISTRY.create
+create_best = REGISTRY.create_best
 available = REGISTRY.names
 engine_info = REGISTRY.info
 
@@ -387,7 +440,7 @@ def _builtin_factory(name: str) -> EngineFactory:
 
     def _make(**cfg: Any) -> Any:
         m = importlib.import_module(mod)
-        brain = getattr(m, cls)(**cfg)
+        brain = getattr(m, cls)(**_adapt_cfg(kind, cfg))
         return as_engine(
             brain,
             info=EngineInfo(name=name, version="", kind=kind,
@@ -397,6 +450,199 @@ def _builtin_factory(name: str) -> EngineFactory:
         )
 
     return _make
+
+
+#: 允许用扁平参数直接创建引擎（不必自己 import PASMConfig）：
+#:     create("pasm", seed=1, plan_samples=8, personality_seed=[0.8, -0.2, 0.6])
+_FLAT_CONFIG_KEYS: Tuple[str, ...] = (
+    "seed", "plan_samples", "plan_iters", "consolidate_every", "device",
+)
+
+
+def _adapt_cfg(kind: str, cfg: dict) -> dict:
+    """把扁平参数收拢成引擎需要的 `config=` 对象（只对完整引擎生效）。
+
+    目的：让 `create_best(("pasm", "pasm-light"), seed=1, ...)` 这种统一调用
+    成为可能 —— 否则调用方就得为每个引擎写一套不同的构造代码，
+    那还是"换引擎要改代码"。取不到 PASMConfig 时原样透传，不吞参数。
+    """
+    if kind != "full" or cfg.get("config") is not None or not cfg:
+        return cfg
+    flat = {k: cfg.pop(k) for k in list(cfg) if k in _FLAT_CONFIG_KEYS}
+    if not flat:
+        return cfg
+    try:
+        from pasm.config import PASMConfig
+        cfg["config"] = PASMConfig(**flat)
+    except Exception:                                # noqa: BLE001
+        cfg.update(flat)
+    return cfg
+
+
+# ============================================================ 能力缺口
+def capability_gap(engine: Any, reference: Any = "pasm") -> List[str]:
+    """算出 `engine` 相对参考引擎**缺哪些能力**（用于"降级运行"的如实告知）。
+
+    `reference` 可以是内置引擎名（如 "pasm"），也可以直接给一个 `Capabilities`。
+    参考名不认识、或引擎没有 `capabilities()` 时返回空列表（不臆测）。
+    """
+    try:
+        mine = engine.capabilities()
+    except Exception:                                # noqa: BLE001
+        return []
+    if isinstance(mine, dict):
+        mine = Capabilities.of(**mine)
+    if not isinstance(mine, Capabilities):
+        return []
+
+    ref: Optional[Capabilities] = None
+    if isinstance(reference, Capabilities):
+        ref = reference
+    elif isinstance(reference, dict):
+        ref = Capabilities.of(**reference)
+    elif isinstance(reference, str) and reference in _BUILTINS:
+        ref = Capabilities.of(**_BUILTINS[reference][3])
+    if ref is None:
+        return []
+    return mine.missing_vs(ref)
+
+
+# ============================================================ 环境插件
+# 环境 = 引擎在其中行动的那个"世界"。把它也做成可插拔的，是为了让引擎
+# 不再和某个具体世界（网格/迷宫/对话）绑死：换环境 = 换注册表里的名字。
+#
+# 契约（必需）：reset() -> obs ；step(action) -> 任意（通常 (next_obs, reward, done)）
+# 契约（可选）：observe() / close() / spec() / obs_dim / n_actions
+#
+# 注意：这里**不规定 step 的返回形状**。教学版是三元组、完整引擎是四元组，
+# 强行统一反而会制造新的耦合；引擎自己负责适配它要跑的环境。
+ENV_REQUIRED_METHODS: Tuple[str, ...] = ("reset", "step")
+ENV_OPTIONAL_METHODS: Tuple[str, ...] = ("observe", "close", "spec")
+
+
+@runtime_checkable
+class Env(Protocol):
+    """环境接口（结构化协议，无需继承即可满足）。"""
+
+    def reset(self) -> Any: ...
+    def step(self, action: Any) -> Any: ...
+
+
+def env_conforms(obj: Any) -> Tuple[bool, List[str]]:
+    """环境结构一致性检查 → (是否通过, 问题清单)。"""
+    problems: List[str] = []
+    for m in ENV_REQUIRED_METHODS:
+        if not callable(getattr(obj, m, None)):
+            problems.append("缺少必需方法 %s()" % m)
+    for m in ENV_OPTIONAL_METHODS:
+        if hasattr(obj, m) and not callable(getattr(obj, m)):
+            problems.append("可选方法 %s 存在但不可调用" % m)
+    return (not problems), problems
+
+
+class EnvRegistry:
+    """环境插件注册表。先注册者自动成为默认环境。"""
+
+    def __init__(self) -> None:
+        self._factories: Dict[str, Callable[..., Any]] = {}
+        self._meta: Dict[str, Dict[str, Any]] = {}
+        self._default: Optional[str] = None
+
+    # ---- 注册 ----
+    def register(self, name: str, factory: Optional[Callable[..., Any]] = None,
+                 info: Optional[Dict[str, Any]] = None, replace: bool = False,
+                 default: bool = False):
+        if factory is None:                      # 当装饰器用：@ENV_REGISTRY.register("x")
+            def _deco(f):
+                self.register(name, f, info, replace, default)
+                return f
+            return _deco
+        if name in self._factories and not replace:
+            raise KeyError("环境 %r 已注册（replace=True 可覆盖）" % name)
+        self._factories[name] = factory
+        if info is not None:
+            self._meta[name] = dict(info)
+        if default or self._default is None:
+            self._default = name
+        return factory
+
+    # ---- 发现 ----
+    def names(self) -> List[str]:
+        return sorted(self._factories)
+
+    def info(self, name: str) -> Optional[Dict[str, Any]]:
+        got = self._meta.get(name)
+        return dict(got) if got else None
+
+    def spec(self) -> Dict[str, Any]:
+        """全部已注册环境的自述（给界面 / 外部校验工具用）。"""
+        return {n: (self._meta.get(n) or {"name": n}) for n in self.names()}
+
+    @property
+    def default(self) -> Optional[str]:
+        return self._default
+
+    def set_default(self, name: str) -> str:
+        if name not in self._factories:
+            raise KeyError("未知环境 %r（可用：%s）"
+                           % (name, ", ".join(self.names()) or "无"))
+        self._default = name
+        return name
+
+    # ---- 创建 ----
+    def make(self, name: Optional[str] = None, **cfg) -> Any:
+        name = name or self._default
+        if name is None:
+            raise RuntimeError("没有任何可用环境（先 register_env 一个）")
+        if name not in self._factories:
+            raise KeyError("未知环境 %r（可用：%s）"
+                           % (name, ", ".join(self.names()) or "无"))
+        return self._factories[name](**cfg)
+
+
+ENV_REGISTRY = EnvRegistry()
+register_env = ENV_REGISTRY.register
+make_env = ENV_REGISTRY.make
+env_names = ENV_REGISTRY.names
+
+
+def env_registry() -> Dict[str, Any]:
+    """全部已注册环境的自述（`env_names()` 的详细版）。"""
+    return ENV_REGISTRY.spec()
+
+
+#: 内置环境（延迟导入：不在 import 本模块时就把 numpy 拉起来）
+_BUILTIN_ENVS: Dict[str, Tuple[str, str, Dict[str, Any]]] = {
+    "gridworld": ("pasm.envs", "GridWorld", {
+        "obs_dim": 27, "n_actions": 4,
+        "description": "10×10 网格世界：收集能量块（完整引擎验证环境）",
+        "aliases": ["grid-10x10"],
+    }),
+}
+
+
+def _register_builtin_envs() -> None:
+    """把本机可用的内置环境登记进来（不可用的静默跳过，不报错）。"""
+    have = set(ENV_REGISTRY.names())
+    for name, (mod, cls, meta) in _BUILTIN_ENVS.items():
+        if name in have:
+            continue
+        try:
+            if importlib.util.find_spec(mod) is None:
+                continue
+        except (ImportError, ValueError, AttributeError):
+            continue
+
+        def _make(_mod=mod, _cls=cls, **cfg):
+            m = importlib.import_module(_mod)
+            return getattr(m, _cls)(**cfg)
+
+        ENV_REGISTRY.register(name, _make,
+                              info=dict(meta, source=mod), replace=True,
+                              default=(ENV_REGISTRY.default is None))
+
+
+_register_builtin_envs()
 
 
 # ============================================================ 自检
@@ -448,6 +694,60 @@ def selftest() -> bool:
           "missing_vs 能算出降级缺口")
 
     check(isinstance(available(), list), "可用引擎列表：%s" % (available() or "无"))
+
+    # ---- 择优创建 + 能力缺口（v1.1 新增）----
+    check(capability_gap(d, Capabilities(perception=True, memory=True)) == ["memory"],
+          "capability_gap 能算出相对缺口")
+    check(capability_gap(d, "__不存在的引擎__") == [],
+          "参考名不认识时不臆测缺口")
+
+    REGISTRY.register("_selftest_engine", lambda **kw: _Dummy(), replace=True)
+    try:
+        eng, rep = create_best(("__缺失引擎__", "_selftest_engine"))
+        check(rep["used"] == "_selftest_engine" and rep.get("degraded") is True,
+              "create_best 跳过不可用项、退到可用项并标记降级")
+        check(isinstance(rep["tried"], list) and len(rep["tried"]) == 2,
+              "create_best 报告逐项尝试记录")
+        try:
+            create_best(("__缺失引擎__",))
+            check(False, "全部不可用时应抛错")
+        except RuntimeError as ex:
+            check("__缺失引擎__" in str(ex), "全部不可用时报错并列出尝试清单")
+    finally:
+        REGISTRY._factories.pop("_selftest_engine", None)
+        REGISTRY._meta.pop("_selftest_engine", None)
+
+    # ---- 环境插件（v1.1 新增）----
+    class _EnvStub:
+        def __init__(self, size: int = 2):
+            self.size = size
+
+        def reset(self):
+            return [0.0] * 4
+
+        def step(self, action):
+            return [0.0] * 4, 0.0, False
+
+    check(env_conforms(_EnvStub())[0], "合规环境通过校验")
+    check(not env_conforms(object())[0], "不合规环境被拦下并列出问题")
+
+    ENV_REGISTRY.register("_selftest_env", lambda **kw: _EnvStub(**kw),
+                          info={"obs_dim": 4, "n_actions": 2}, replace=True)
+    try:
+        check("_selftest_env" in env_names(), "环境注册表可登记新环境")
+        e = make_env("_selftest_env", size=3)
+        check(getattr(e, "size", None) == 3, "make_env 透传配置")
+        check(isinstance(env_registry(), dict) and "_selftest_env" in env_registry(),
+              "env_registry() 返回自述清单")
+        try:
+            make_env("__不存在的环境__")
+            check(False, "未知环境应报错")
+        except KeyError:
+            check(True, "未知环境报错并给出可用清单")
+    finally:
+        ENV_REGISTRY._factories.pop("_selftest_env", None)
+        ENV_REGISTRY._meta.pop("_selftest_env", None)
+
     print("engine_api selftest:", "通过" if ok else "失败")
     return ok
 
