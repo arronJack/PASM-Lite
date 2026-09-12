@@ -199,7 +199,7 @@ class Agent:
         z2 = self.ae.encode(next_obs)
         a_oh = F.one_hot(torch.tensor(a), 4).float()
         h, zp, rp = self.wm(z, a_oh, m, self.h)
-        loss = (z2 - zp).pow(2).mean() + 0.2 * (r - float(rp)) ** 2 \
+        loss = (z2 - zp).pow(2).mean() + 0.2 * (r - float(rp.detach())) ** 2 \
             + (obs - self.ae.dec(z)).pow(2).mean() * 0.5
         self.opt.zero_grad()
         loss.backward()
@@ -225,7 +225,7 @@ def main():
         z, c, m, key = ag.ae.encode(obs), torch.zeros(8), torch.zeros(8), None
         a_oh = F.one_hot(torch.tensor(a), 4).float()
         h, zp, rp = ag.wm(z, a_oh, m, ag.h)
-        loss = (ag.ae.encode(nxt) - zp).pow(2).mean() + 0.2 * (r - float(rp)) ** 2
+        loss = (ag.ae.encode(nxt) - zp).pow(2).mean() + 0.2 * (r - float(rp.detach())) ** 2
         ag.opt.zero_grad(); loss.backward(); ag.opt.step()
         ag.h = h.detach()
         obs = nxt if not done else env.reset()

@@ -27,6 +27,13 @@ introspectable inner states (emotion vectors, memory hits, habit formation).
 `pip install -r requirements.txt`, then run the demo. Documentation is primarily in
 Chinese; [index.md](index.md) is a good starting point.
 
+**Engine API**: the repo ships `engine_api.py` (a stdlib-only mirror of the core
+`pasm/engine_api.py`) together with `engine.py`, so Lite can be plugged in as a
+standard engine — `create("pasm-lite")`, then `reset_episode() / act() / learn() /
+snapshot()`. The production engines implement the very same interface, so swapping
+`create("pasm-lite")` for `create("pasm")` requires no change in calling code.
+Run `python engine.py` for a self-checking demo.
+
 ---
 
 ## 一、PASM 是什么（先认识它，再看代码）
@@ -155,6 +162,41 @@ PASM 不止是科研引擎——2026-09-04 起三仓库同频到"认知大脑"�
 桌面产品 PASM Studio v0.27.0 正是"LLM 语言脑 + 认知皮层 + 七层/轻量引擎"的组合。
 Lite 作为教学版，演示的是其中最核心的**零 token 认知循环**；认知皮层与桌面层的
 完整代码在教学范围之外（详见各仓库文档）。
+
+### 2.6 作为引擎使用（统一接口 Engine API）
+
+教学版现在不只"能跑"，还**能当引擎插上去**。仓库自带 `engine_api.py`
+（与 PASM 核心 `pasm/engine_api.py` 同源镜像，纯标准库、零依赖），把引擎该有的方法
+固化成一份**可校验的契约**；`engine.py` 就是教学版对该契约的实现。
+
+```python
+from engine_api import create
+
+eng = create("pasm-lite")             # 按名字拿引擎；换成 create("pasm") 即换生产引擎
+eng.reset_episode()
+action, report = eng.act(obs)         # 决策
+eng.learn(reward=r, next_obs=obs2)    # 学习（内部管线由引擎自己管）
+print(eng.info().to_dict())           # 我是谁
+print(eng.capabilities().layers())    # 我会什么
+print(eng.snapshot()["memory"])       # 记忆现状
+```
+
+- **契约**：`info / capabilities / reset_episode / act / learn / snapshot` 六项必需，
+  `save / load / freeze_vae / close` 可选；`conforms(eng)` 一键校验是否合规。
+- **自描述**：`capabilities()` 如实申报——教学版只覆盖七层里的主干四层
+  （感知 / 工作记忆 / 情景记忆 / 世界模型），情绪 / 性格 / 发育 / 元认知为 `False`；
+  用 `missing_vs()` 可列出"相对完整引擎还缺什么"。
+- **快照统一**：`snapshot()` 固定七个区块（没有的填 `None`），于是统一看板
+  能无差别读取任意引擎的状态。
+- **可发现**：导入即注册，`create("pasm-lite")` / `create("pasm-light")` / `create("pasm")`。
+
+```bash
+python engine.py            # 跑通闭环 + 打印接口一致性自检
+python engine.py 3 150      # 3 局、预热 150 步（快速验证用）
+```
+
+> 意义：**上层依赖接口，不依赖实现**。今天用教学版把流程跑通，明天把
+> `create("pasm-lite")` 换成 `create("pasm")`，调用代码一行都不用改。
 
 ---
 

@@ -73,6 +73,23 @@ PASM 目前是三仓库同频的**认知大脑**形态：
 - **PASM-Lite**（本仓库，公开）＝零 token 认知**最小教学实现**，定位不变：它是理解 PASM
   核心思想最快的入口，其余两层能力在教学范围之外。
 
+## 六点六、新增：统一引擎接口（Engine API）
+
+本仓库现在多了一件事：Lite **可以当引擎插进任何系统**，而不只是一段演示代码。
+
+- `engine_api.py`（纯标准库、零依赖；与 PASM 核心 `pasm/engine_api.py` 同源镜像）
+  定义引擎契约：`info / capabilities / reset_episode / act / learn / snapshot` 六项必需，
+  `save / load / freeze_vae / close` 可选。
+- `engine.py` 是教学版对该契约的实现（`LiteEngine`），导入即注册——
+  `create("pasm-lite")` 就能拿到一个标准引擎；换成 `create("pasm")` 即生产引擎，
+  **调用代码一行都不用改**。
+- `capabilities()` 诚实申报自己会什么（教学版只覆盖七层里的主干四层），
+  `missing_vs()` 能列出相对完整引擎还缺哪些能力——不做"看起来很全"的假象。
+- `snapshot()` 固定七个区块（没有的填 `None`），统一看板可无差别读取任意引擎状态。
+- 试一下：`python engine.py`（跑通闭环 + 打印接口一致性自检）。
+
+一句话：**接口是 PASM 生态的插座**，Lite 现在有了标准插头。
+
 ## 七、部署与合作
 
 - **教学代码**：本仓库即全部（MIT 协议），clone 即跑
