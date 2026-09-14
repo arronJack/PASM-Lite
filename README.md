@@ -8,6 +8,26 @@
 
 ---
 
+## 〇、PASM 生态索引（六仓同频）
+
+| 仓 | 角色 | 可见性 | 版本 |
+|---|---|---|---|
+| `pasm-skills` | 基座：`BaseAgent` + 认知能力层 | 公开 | 0.5.0 |
+| `pasm-agents` | 成品智能体集（NPC / 陪伴 / 教学 / 验证） | 公开 | 0.4.5 |
+| `pasm-mcp-server` | MCP 接入层：给任意 AI 客户端装长期记忆 | 公开 | 0.2.0 |
+| **`PASM-Lite`（本仓）** | **教学版 + 认知引擎接口** | 公开 | — |
+| `PASM` | 核心引擎（七层仿生 / 世界模型） | **私有** | 0.7.1 |
+| `pasm-qclaw` | 桌面应用发行通道 | 公开 | 0.29.1 |
+
+`PASM-Lite` 是这套生态**面向外界的窗口**：想了解"PASM 到底在做什么"，从这里读起；
+想直接写代码，去 `pasm-skills`；想用现成智能体，去 `pasm-agents`；
+想给自己的 AI 客户端装记忆，去 `pasm-mcp-server`。
+
+地址：[Gitee](https://gitee.com/arronzheng/PASM-Lite) ·
+[GitHub](https://github.com/arronJack/PASM-Lite)
+
+---
+
 ## 🇬🇧 English
 
 **PASM-Lite** is the open-source educational edition of **PASM (Predictive Agent System
