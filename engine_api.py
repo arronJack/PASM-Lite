@@ -37,6 +37,15 @@ PASM 现在有多套"大脑"实现，它们彼此可替换：
 ----------------------
     save(path) / load(path) / freeze_vae() / close()
 
+v2.0 扩展面（api 1.2 新增，全部可选；由 pasm2 闭环认知体提供）
+--------------------------------------------------------------
+    attach_llm_bridge(bridge)  挂载 LLM 桥（narrator 出话 + 嵌入入口）
+    speak(report=None)         语言出口出话（未挂桥/未开开关 → 诚实拒绝）
+    apply_growth()             成长提案落地（重建引擎 + 状态延续）
+    flush_growth()             冲刷成长日记到落盘
+    说明：这些方法**不在必需契约内**，旧引擎缺它们不算不合规
+    （conforms 只在"存在但不可调用"时报问题）。
+
 零依赖：只用标准库，任何环境（含无 torch 的纯 Python 环境）都能 import。
 运行 `python -m pasm.engine_api` 或 `engine_api.selftest()` 自检。
 """
@@ -59,7 +68,7 @@ __all__ = [
     "env_names", "env_registry",
 ]
 
-API_VERSION = "1.1"
+API_VERSION = "1.2"
 
 #: 默认择优顺序：能跑完整七层引擎就用它，否则退到零依赖轻量体。
 DEFAULT_PREFERENCE: Tuple[str, ...] = ("pasm", "pasm-light")
@@ -74,7 +83,11 @@ SNAPSHOT_SECTIONS: Tuple[str, ...] = (
 REQUIRED_METHODS: Tuple[str, ...] = (
     "info", "capabilities", "reset_episode", "act", "learn", "snapshot",
 )
-OPTIONAL_METHODS: Tuple[str, ...] = ("save", "load", "freeze_vae", "close")
+OPTIONAL_METHODS: Tuple[str, ...] = (
+    "save", "load", "freeze_vae", "close",
+    # api 1.2（v2.0 扩展面，全部可选）
+    "attach_llm_bridge", "speak", "apply_growth", "flush_growth",
+)
 
 
 # ============================================================ 自描述

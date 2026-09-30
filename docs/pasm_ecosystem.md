@@ -76,11 +76,14 @@ PASM 已完成一次形态升级：从"科研引擎 + 聊天外皮"变成"**引�
   - 成长：经验制可续档，知识库自动分类入库、重读巩固（置信度↑）、条目交叉联想
 
 ## 四、生态一览（仓库地图）
-| 仓库 | 可见性 | 内容 | 当前版本 |
+| 仓库 | 可见性 | 内容 | 当前版本（2026-09-30 校准） |
 |---|---|---|---|
-| `arronzheng/PASM` | 私有 | 七层引擎 + 认知执行皮层 + 桌面全源码 + docs（权威，含 RELEASE_NOTES） | 引擎 v0.4.0 · 桌面 v0.27.0 |
-| `arronzheng/PASM-Lite` | 开源 MIT | 教学最小实现 + 理念文档（本文件所在） | 教学版（定位不变） |
-| `arronzheng/pasm-qclaw` | 公开 | 产品发行：源码镜像 + Releases 安装包 + README/CHANGELOG/latest 升级源 | 桌面 v0.27.0 |
+| `arronzheng/PASM` | 私有 | 七层引擎 + 认知执行皮层 + 桌面全源码 + docs（权威，含 RELEASE_NOTES） | 引擎 v0.7.2 · 桌面 v0.31.16 · pasm2 v2.0.0a11 |
+| `arronzheng/PASM-Lite` | 开源 MIT | 教学最小实现 + 理念文档（本文件所在） | 教学版（定位不变）· 契约镜像 api 1.2 |
+| `arronzheng/pasm-qclaw` | 公开 | 产品发行：源码镜像 + Releases 安装包 + README/CHANGELOG/latest 升级源 | 桌面 v0.31.16 |
+| `arronzheng/pasm-skills` · `pasm-framework` · `pasm-agents` · `pasm-mcp-server` | 公开 | 基座 / 应用框架 / 成品智能体集 / MCP 分发层 | 0.6.3 · 0.5.4 · 0.5.0 · 0.2.1 |
+
+> 注：本文件〇/〇-A/〇-B 三节为历史动态留档（v0.27.0 时代），版本号仅上表按当前校准。
 
 **文档地图（docs/）**
 - `cognitive_brain.md`（认知大脑版：引擎+皮层+语言脑架构、桌面同频能力表）

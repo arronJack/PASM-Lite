@@ -103,7 +103,7 @@ print(eng.learning_tier)                  # full / teaching / 自定义
 |---|---|
 | **`pasm_lite.py`** | 教学主干：`GridWorld` / `AutoEncoder` / `WorkMemory` / `Episodic` / `WorldModel` / `Planner` / `Agent`（含 `freeze_encoder` 编码器冻结）+ 命令行闭环 |
 | **`engine.py`** | `LiteEngine` 引擎实现：契约六件套 + `warmup()` / `run_episode()` / `freeze_vae()` / `attach_learning()` / 快照七区块 / 存档读档（含档位校验） |
-| **`engine_api.py`** | 同源契约镜像（api 1.1）：`EngineInfo` / `Capabilities` / `conforms` / `as_engine` / `Registry` / `create` / `create_best` / `capability_gap` / `normalize_snapshot` |
+| **`engine_api.py`** | 同源契约镜像（api 1.2）：`EngineInfo` / `Capabilities` / `conforms` / `as_engine` / `Registry` / `create` / `create_best` / `capability_gap` / `normalize_snapshot` |
 | **`envs.py`** | 环境插件：`grid-10x10`（网格）+ `toy-vector`（连续向量，非网格）；`register_env` / `make_env` / `env_names` / `env_conforms` |
 | **`learning.py`** | 学习层（teaching 档，契约 `pasm.learning/1.0`）：`update(z,a,r)` / `bias(z)` / `recall_action(z)` / `info` / `capabilities` / `learn` / `state` / `apply_state` |
 | **`mathlab.py`** | 数学脑（纯 numpy）：线性回归(R²) / 多元回归 / 描述统计 / 相关矩阵 / 线性方程组 / 矩阵特征 / 拓扑排序 / 环检测 / 最短路(Dijkstra) / 连通分量 / 马尔可夫稳态 / 表格分析 |
